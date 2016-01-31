@@ -1,0 +1,80 @@
+---
+title: "PML Project"
+author: "RC"
+date: "January 30, 2016"
+output: html_document
+---
+###Introduction
+
+The purpose of this project was to predict how well individuals perform a particular weight lifting exercise.  The data set contains information on 6 individuals who did dumbbell bicep curls while wearing arm, forearm and belt sensors to track their motion.  The six participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).  In this project I used the testing data set to build a model to predict how well the participants in the testing set did the same exercise.
+
+###Data Processing
+
+The testing and training data sets were downloaded from the following website: http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises and were imported into R.
+```{r}
+training<-read.csv("pml-training.csv")
+testing<-read.csv("pml-testing.csv")
+ncol(training)
+```
+Looking at the training data set there are a lot of columns with primarily NAs.  These columns were removed from the training and testing data sets as follows.
+```{r}
+training[training == ""] <- NA
+training<-training[, colSums(is.na(training)) < nrow(training)*.8]
+ncol(training)
+testing[testing == ""] <- NA
+testing<-testing[, colSums(is.na(testing)) < nrow(testing)*.8]
+ncol(testing)
+```
+The first 7 columns contain information about the subject and are not relevant in predicting exercise performance.  These were removed from the training and testing data sets.
+```{r}
+training<-training[,8:60]
+testing<-testing[,8:60]
+```
+The training data set was partitioned into training and testing data sets to be used for testing the model.  The seed was set.
+```{r}
+library(caret)
+inTrain<-createDataPartition(y=training$classe,p=0.75,list=FALSE)
+trainA<-training[inTrain,]
+testA<-training[-inTrain,]
+set.seed(32343)
+```
+
+###Prediction Algorithms
+
+Due to the large number of predictors I thought that predicting with trees or random forests might be most effective.  The code for predicting with trees using the caret package is below.
+```{r}
+library(rpart)
+modFit <- train(classe ~ .,method="rpart",data=trainA)
+predictions<-predict(modFit,newdata=testA)
+confusionMatrix(predictions,testA$classe)
+```
+The accuracy of this model is only 50%.  Due to the size of the training data set I encountered memory allocation errors when trying to build a random forest model with both the caret and randomForest packages.  I decided to use parallel processing in caret with k-fold cross validation with 10 folds. The code is below.
+```{r}
+library(doParallel)
+library(iterators)
+library(foreach)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+fitControl <- trainControl(method = "cv",number = 10, allowParallel = TRUE)
+fit <- train(classe~., method="rf",data=trainA,trControl = fitControl)
+stopCluster(cluster)
+predictions<-predict(fit,newdata=testA)
+confusionMatrix(predictions,testA$classe)
+```
+The accuracy of this model was around 99%.  To calculate the out of sample error I compared the predictions to the classe variable in the test set.
+```{r}
+pred.accuracy<-sum(predictions == testA$classe)/length(predictions)
+#out of sample error
+out.error<-(1-pred.accuracy)*100
+out.error
+```
+The out of sample error was less than 1%.
+
+###Applying the Model on the Test Set
+
+I applied the model to the testing set with the following code.
+```{r}
+predictions1<-predict(fit,newdata=testing)
+```
+
+
